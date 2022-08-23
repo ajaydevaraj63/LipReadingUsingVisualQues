@@ -1,0 +1,598 @@
+import cv2
+import numpy as np
+from matplotlib import pyplot as plt
+from PIL import Image
+from PIL import ImageFilter
+import os
+import pandas as pd
+
+import sys
+import os
+import dlib
+import glob
+import cv2
+
+from skimage.transform import resize
+from skimage.feature import hog
+from skimage import exposure
+
+from imutils import face_utils
+
+import numpy as np
+import mahotas
+import mahotas.demos
+from mahotas.thresholding import soft_threshold
+from pylab import imshow, show
+from os import path
+
+detector = dlib.get_frontal_face_detector()
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
+
+def crop_mouth(img):
+    # img = cv2.imread(f)
+    img1=img
+    img2=img
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
+    
+
+    dets = detector(img, 1)
+   
+    for k, d in enumerate(dets):
+        
+        dt=abs(d.left()-d.right())+abs(d.top()-d.bottom())
+        # Get the landmarks/parts for the face in box d.
+        shape = predictor(img, d)
+        shape1 = face_utils.shape_to_np(shape)
+
+        for (x, y) in shape1[48:68]:
+            cv2.circle(img2, (x, y), 1, (0, 0, 255), -1)
+     
+       
+        xmouthpoints = [shape.part(x).x for x in range(48,67)]
+        ymouthpoints = [shape.part(x).y for x in range(48,67)]
+        maxx = max(xmouthpoints)
+        minx = min(xmouthpoints)
+        maxy = max(ymouthpoints)
+        miny = min(ymouthpoints) 
+
+        # to show the mouth properly pad both sides
+        pad = 1000//dt
+      
+       
+
+        crop_image = img1[miny-pad:maxy+pad,minx-pad:maxx+pad]
+        crop_image=cv2.resize(crop_image,(40,40))
+        c=crop_image
+
+        crop_image1 = img2[miny-pad:maxy+pad,minx-pad:maxx+pad]
+        crop_image1=cv2.resize(crop_image1,(40,40))
+
+        crop_image2 = img[miny-pad:maxy+pad,minx-pad:maxx+pad]
+        crop_image2=cv2.resize(crop_image2,(160,160))
+
+        hr=haar(crop_image2)
+
+        crop_image=hog1(crop_image)
+        
+       
+        cv2.imwrite('eh1.jpg',c)
+        return crop_image,crop_image1,hr
+        
+
+
+
+
+
+def process(path):
+    img=cv2.imread(path)
+    kernel = np.array([[0, -1, 0],
+                   [-1, 5,-1],
+                   [0, -1, 0]])
+    img = cv2.filter2D(src=img, ddepth=-1, kernel=kernel)
+    lab= cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    cl = clahe.apply(l)
+    limg = cv2.merge((cl,a,b))
+    dst=cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    
+    cv2.imwrite('eh.jpg',dst)
+    dst,dst1,dst2=crop_mouth(dst)
+    return dst,dst1,dst2
+    
+
+
+
+def hog1(img):
+    fd, hog_image = hog(img, orientations=6, pixels_per_cell=(2, 2), cells_per_block=(3, 3), visualize=True, multichannel=True)
+    return hog_image
+
+def surf1(img):
+    surf = cv2.xfeatures2d.SURF_create(400)
+    kp, des = surf.detectAndCompute(img,None)
+    
+def haar(img):
+    h = mahotas.haar(img)
+    return h
+
+def test_fold(fld):
+    imgs=[f for f in os.scandir(fld)]
+    dl1=[]
+    dl2=[]
+    dl3=[]
+    for j in imgs:
+        #print(j.name)
+        if j.name.split('.')[1]=='png':
+            continue
+        path1=fld+'/'+j.name
+        # print(path1)
+        d1,d2,d3=process(path1)
+        # print(d1.shape)
+        # print(d2.shape)
+        # print(d3.shape)
+        dl1.append(d1)
+        dl2.append(d2)
+        dl3.append(d3)
+    dl1=np.array(dl1) 
+    dl1=np.expand_dims(dl1,axis=0)  
+    dl2=np.array(dl2) 
+    dl2=np.expand_dims(dl2,axis=0)  
+    dl3=np.array(dl3) 
+    dl3=np.expand_dims(dl3,axis=0)   
+    return dl1,dl2,dl3
+
+
+def read_from_folder(path):
+    print("==================================================")
+    print("Scanning Folders....")
+    data1=[]
+    data2=[]
+    data3=[]
+    labels=[]
+    subfolders= [f for f in os.scandir(path) if f.is_dir()]
+    for sf in subfolders:
+        words=[f for f in os.scandir(sf.path+'/'+'words') if f.is_dir()]
+        c=0
+        for w in words:
+            samples=[f for f in os.scandir(w.path) if f.is_dir()]
+            for s in samples:
+                print(s.path)
+                imgs=[f for f in os.scandir(s.path)]
+                dl1=[]
+                dl2=[]
+                dl3=[]
+                for j in imgs:
+                    #print(j.name)
+                    if j.name.split('.')[1]=='png':
+                        continue
+                    path1=path+'/'+sf.name+'/'+'words/'+w.name+'/'+s.name+'/'+j.name
+                    # print(path1)
+                    d1,d2,d3=process(path1)
+                    # print(d1.shape)
+                    # print(d2.shape)
+                    # print(d3.shape)
+                    dl1.append(d1)
+                    dl2.append(d2)
+                    dl3.append(d3)
+                try:    
+                    dl1=np.array(dl1[:7])
+                    dl2=np.array(dl2[:7])
+                    dl3=np.array(dl3[:7])
+                    assert dl1.shape == (7,40,40)
+                    assert dl2.shape == (7,40,40,3)
+                    assert dl3.shape == (7,160,160)
+
+                    print(dl1.shape,'=======')
+                    data1.append(dl1)  
+                    
+                    
+                    #print(dl2.shape,'=======')
+                    data2.append(dl2) 
+
+                    
+                    #print(dl3.shape,'=======')
+                    data3.append(dl3) 
+
+                    labels.append(c)
+                except Exception as e:
+                    print(e)
+                    print(10*'#')
+                    continue    
+            c+=1    
+                   
+    print('found ',len(data1),' images belonging to',len(subfolders),' classes')
+    print("converting to dataframe...")
+   
+    return np.array(data1),np.array(data2),np.array(data3),np.array(labels)
+
+
+if __name__=="__main__":
+    data1,data2,data3,labels=read_from_folder('dataset') 
+    import pickle
+
+    pickle.dump(data1,open('data1.pkl','wb'))
+    pickle.dump(data2,open('data2.pkl','wb'))
+    pickle.dump(data3,open('data3.pkl','wb'))
+    pickle.dump(labels,open('labels.pkl','wb'))
+
+    data1,data2,data3,labels=pickle.load(open('data1.pkl','rb')),pickle.load(open('data2.pkl','rb')),pickle.load(open('data3.pkl','rb')),pickle.load(open('labels.pkl','rb'))
+
+   
+    
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import tkinter as tk
+from PIL import ImageTk, Image
+import sqlite3,csv
+from tkinter import messagebox
+#from camera2 import main
+from tkinter.filedialog import askopenfilename
+from tkinter import *
+from tkinter.filedialog import askopenfilename
+from tkinter import messagebox,DISABLED,NORMAL
+# import pymysql
+import datetime
+from functools import partial
+from PIL import Image, ImageTk
+# from testing import process
+import time
+title="Lip Reading"
+path1="sample.jpg"
+path2="sample1.jpg"
+import PIL.Image, PIL.ImageTk
+
+
+def logcheck():
+    global username_var,pass_var
+    uname=username_var.get()
+    pass1=pass_var.get()
+    if uname=="" and pass1=="":
+        showcheck()    
+    else:
+        messagebox.showinfo("alert","Wrong Credentials")  
+          
+
+# show home page
+
+
+def showcheck():
+    top.title(title)
+    top.config(menu=menubar)
+    global f,f1,f_bottom,f_top,f_b1
+
+    f.pack_forget()
+    f=Frame(top)
+    f.config(bg="#41ddff")
+    f.pack(side="top", fill="both", expand=True,padx=10,pady=10)
+    
+    f_bottom=Frame(f)
+    f_bottom.config(bg="#41ddff",width=1500,height=130)
+    f_bottom.pack_propagate(False)
+    f_bottom.pack(side='bottom',fill='both')
+
+    f_b1=Frame(f_bottom)
+    f_b1.config(bg="#41ddff",width=500,height=50)
+    f_b1.pack_propagate(False)
+    f_b1.pack(side='top')
+
+
+    f_top=Frame(f)
+    f_top.config(bg="#41ddff",height=800,width=1500)
+    f_top.pack_propagate(False)
+    f_top.pack(side='bottom',fill='both')
+
+
+    f1=Frame(f_top)
+    f1.pack_propagate(False)
+    f1.config(bg="#41ddff",width=350)
+    f1.pack(side="left",fill="both")
+
+    global f2
+    f2=Frame(f_top)
+    f2.pack_propagate(False)
+    f2.config(bg="#41ddff",width=300)
+    f2.pack(side="right",fill="both")
+    # l4=Label(f2,text="Results",font="Helvetica 13 bold")
+    # l4.pack(fill='both',pady=5,padx=5,side='top')
+    f2a=Frame(f2)
+    f2a.config(bg="#41ddff")
+    f2a.pack(side="top",fill="both",padx=5)
+
+
+    f3=Frame(f_top)
+    f3.pack_propagate(False)
+    f3.config(bg="#41ddff",width=800)
+    f3.pack(side="right",fill="both")
+
+    global f4
+    f4=Frame(f1)
+    f4.pack_propagate(False)
+    f4.config(bg="#41ddff",height=200)
+    f4.pack(side="bottom",fill="both")
+
+    f7=Frame(f1)
+    f7.pack_propagate(False)
+    f7.config(height=20)
+    f7.pack(side="top",fill="both",padx="3")
+
+    l2=Label(f7,text="Process",font="Helvetica 13 bold")
+    l2.pack()
+
+    global lb1,cn1,cn2
+
+    lb1=Listbox(f1,width=400,height=400,font="Helvetica 13 bold")
+    lb1.pack(pady=10,padx=5)
+    scrollbar = Scrollbar(f1) 
+    scrollbar.config(command = lb1.yview) 
+    scrollbar.pack(side = RIGHT, fill = BOTH) 
+    lb1.config(yscrollcommand = scrollbar.set)
+
+    # for x in range(100):
+    #     lb1.insert(END, str(x))
+    b2=Button(f4,text="Choose video",font="Verdana 10 bold",command=detect)
+    b2.pack(pady=2)
+    # b2=Button(f4,text="Stop process",font="Verdana 10 bold",command=stop)
+    # b2.pack(pady=2)
+    
+    l3=Label(f3,text="Output",font="Helvetica 13 bold")
+    l3.pack(fill='both',pady=5)
+    
+    global cn1
+    cn1 =Canvas(f3, width = 800, height = 600)
+    cn1.pack()
+
+   
+
+    
+def stop():
+    global sflag,lb1,f4
+    sflag=0
+        
+    
+
+import threading
+
+
+
+
+
+
+def detect():
+    global lb1,sflag,cn1,top,cn2,f4,b2,f_bottom,d_clicked
+    
+    lb1.delete(0,END)
+    sflag=1
+    # sflag=1
+    
+    main(lb1,cn1,top)
+    
+    
+    # t1.start() 
+    
+
+def delayed_insert(label,index,message):
+    label.insert(0,message)  
+
+
+
+import threading
+def insert1(label,msg):
+    label.insert(0,message) 
+    
+
+def delayed_insert(label,index,message):
+    # t1=threading.Thread(target=insert1,args=(label,message))
+    # t1.start()
+    label.insert(0,message) 
+
+
+
+
+
+
+import cv2
+
+import numpy as np
+import os,shutils
+from keras.models import load_model
+import numpy as np
+import argparse
+import cv2
+import os
+import sys
+import shutil
+
+import time
+
+def start_app(cnn,lb1,cn1,top,path):
+   
+    rgb=cv2.VideoCapture(path)
+    lt=0
+    lp=8
+    
+    
+    flag = False
+    init=0
+    shutil.rmtree('temp')
+    os.mkdir('temp')
+
+
+    frs=0
+    ff1=0
+    flag2=1
+    while True:
+        time.sleep(1)
+        # ff1+=1
+        # if ff1%3==0:
+        #     continue
+        frs+=1
+        # ff1=0
+        # if frs>init:
+        #     flag2=1
+        # frs=0
+        # try:
+        if sflag==0:
+            cv2.destroyAllWindows()
+            rgb.release()
+            del rgb
+            os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
+            break
+       
+        lb1.after(lt,delayed_insert,lb1,lp,"Reading frame...")
+        lb1.update()
+        lt+=1
+        lp+=1
+        st,fr = rgb.read()
+        if flag2:
+            cv2.imwrite('temp/%s.jpg'%(frs),fr)
+         
+        #lis.append(pred)
+        if frs==init+7:
+            break
+       
+        fr1=cv2.resize(fr,(500,500))
+        # cv2.namedWindow('image',cv2.WINDOW_NORMAL)
+        photo = PIL.ImageTk.PhotoImage(image = PIL.Image.fromarray(fr1))
+        cn1.create_image(0, 0, image = photo, anchor = NW)
+        top.update()
+       
+    rgb.release() 
+    rgb=''   
+    cv2.destroyAllWindows()
+    dict1={0:'Begin',1:'Choose',2:'Connection',3:'Navigation',4:'Next',5:'Previous',6:'Start',7:'Stop',8:'Hello',9:'Web'}
+    from pre import test_fold
+    model1=load_model('model1')
+
+    f1,f2,f3=test_fold('temp')
+
+    f1=np.reshape(f1,(1,7,40,40,1))
+    f2=np.reshape(f2,(1,7,40,40,3))
+    f3=np.reshape(f3,(1,7,160,160,1))
+
+    pred1=model1.predict(f1)[0]
+    pred1=np.argmax(pred1)
+    pred1=dict1[pred1]
+    print(pred1)
+
+    # model2=load_model('model2')
+
+    # pred2=model2.predict(f2)[0]
+    # pred2=np.argmax(pred2)
+    # pred2=dict1[pred2]
+    # print(pred2)
+
+    # model3=load_model('model')
+
+    # pred3=model3.predict(f3)[0]
+    # pred3=np.argmax(pred3)
+    # pred3=dict1[pred3]
+    # print(pred3)
+
+
+    lb1.after(lt,delayed_insert,lb1,lp,"Predicted word : %s"%(pred1))
+    lb1.update()
+    lt+=1
+    lp+=1
+
+    return None
+
+
+def main(lb1,cn1,top):
+
+    global video,audio,step,duration,c,aem,facec,font
+    print("choose video")
+    path=askopenfilename()
+    # load trained models
+    md=''
+    values=start_app(md,lb1,cn1,top,path)
+    return values
+
+#main()
+
+
+if __name__=="__main__":
+
+    top = Tk()  
+    top.title("Login")
+    top.geometry("1900x700")
+    footer = Frame(top, bg='grey', height=30)
+    footer.pack(fill='both', side='bottom')
+
+    lab1=Label(footer,text="Developed ",font = "Verdana 8 bold",fg="white",bg="grey")
+    lab1.pack()
+
+    menubar = Menu(top)  
+      
+    menubar.add_command(label="Detection",command=showcheck)
+    # menubar.add_command(label="Register",command=showreg)
+
+    top.config(bg="#41ddff",relief=RAISED)  
+    f=Frame(top)
+    f.config(bg="#41ddff")
+    f.pack(side="top", fill="both", expand=True,padx=10,pady=10)
+    l=Label(f,text=title,font = "Verdana 25 bold",fg="white",bg="#41ddff")
+    l.place(x=150,y=50)
+    l2=Label(f,text="Username:",font="Verdana 10 bold",bg="#41ddff")
+    l2.place(x=550,y=300)
+    global username_var
+    username_var=StringVar()
+    e1=Entry(f,textvariable=username_var,font="Verdana 10 bold")
+    e1.place(x=700,y=300)
+
+    l3=Label(f,text="Password:",font="Verdana 10 bold",bg="#41ddff")
+    l3.place(x=550,y=330)
+    global pass_var
+    pass_var=StringVar()
+    e2=Entry(f,textvariable=pass_var,font="Verdana 10 bold",show="*")
+    e2.place(x=700,y=330)
+    #showcheck()
+
+    b1=Button(f,text="Login", command=logcheck,font="Verdana 10 bold")
+    b1.place(x=750,y=360)
+
+    top.mainloop() 
+
